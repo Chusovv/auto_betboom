@@ -40,36 +40,38 @@ async function isWheelActive(page) {
   return false;
 }
 
-async function checkLink(link, page) {
+async function checkLink(link, context) {
+  const page = await context.newPage();
   try {
-    await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-  } catch {
     await page.goto(link, { waitUntil: 'load', timeout: 45_000 });
-  }
+    await page.waitForTimeout(3_000);
 
-  await page.waitForTimeout(3_000);
+    const active = await isWheelActive(page);
+    const prev = state[link];
 
-  const active = await isWheelActive(page);
-  const prev = state[link];
+    if (active && prev !== 'active') {
+      state[link] = 'active';
+      saveState();
 
-  if (active && prev !== 'active') {
-    state[link] = 'active';
-    saveState();
+      const msg =
+        `🎰 <b>Колёсо фрибета активировано!</b>\n\n` +
+        `🔗 <a href="${link}">${link}</a>\n\n` +
+        `Перейдите по ссылке, чтобы принять участие.`;
 
-    const msg =
-      `🎰 <b>Колёсо фрибета активировано!</b>\n\n` +
-      `🔗 <a href="${link}">${link}</a>\n\n` +
-      `Перейдите по ссылке, чтобы принять участие.`;
-
-    await broadcast(msg, { parse_mode: 'HTML' });
-    console.log(`[wheel-monitor] 🔔 Уведомление: ${link}`);
-  } else if (!active) {
-    state[link] = 'inactive';
+      await broadcast(msg, { parse_mode: 'HTML' });
+      console.log(`[wheel-monitor] 🔔 Уведомление: ${link}`);
+    } else if (!active) {
+      state[link] = 'inactive';
+    }
+  } catch (err) {
+    console.error(`[wheel-monitor] ❌ Ошибка проверки ${link}:`, err.message);
+  } finally {
+    await page.close();
   }
 }
 
 let browser = null;
-let page = null;
+let context = null;
 
 export async function startWheelMonitor() {
   if (!config.betboomWheelLinks.length) {
@@ -90,24 +92,19 @@ export async function startWheelMonitor() {
     ],
   };
 
-  browser = await chromium.launch(launchArgs);
-  const context = await browser.newContext({
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36',
-    ignoreHTTPSErrors: true,
-  });
-  page = await context.newPage();
+  browser = await chromium.launch({ headless: true, args: launchArgs.args });
+  context = await browser.newContext();
 
   const pollMs = config.betboomWheelPollMin * 60 * 1000;
 
   async function tick() {
     console.log(`[wheel-monitor] 🔄 Проверка ${config.betboomWheelLinks.length} ссылок...`);
     for (const link of config.betboomWheelLinks) {
-      await checkLink(link, page).catch(err => {
+      await checkLink(link, context).catch(err => {
         console.error(`[wheel-monitor] ❌ Ошибка проверки ${link}:`, err.message);
       });
     }
-    console.log(`[wheel-monitor] ✅ Проверка завершена. Следующая через ${config.betboomWheelPollMin} мин`);
+    console.log(`[wheel-monitor] ✅ Проверка завершена. Следующий через ${config.betboomWheelPollMin} мин`);
   }
 
   await tick();
@@ -118,6 +115,10 @@ export async function startWheelMonitor() {
 }
 
 export async function stopWheelMonitor() {
+  if (context) {
+    await context.close();
+    context = null;
+  }
   if (browser) {
     await browser.close();
     browser = null;
