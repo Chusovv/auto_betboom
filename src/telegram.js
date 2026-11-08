@@ -40,7 +40,7 @@ bot.command('status', (ctx) => {
     `📊 Статус бота:\n` +
     `• Подписка: ${subscribers.has(String(ctx.chat.id)) ? '✅' : '❌'}\n` +
     `• Подписчиков: ${subscribers.size}\n` +
-    `• Стримеров: ${config.streamers.join(', ') || '—'}\n` +
+    `• Стримеров: ${config.streamers?.join(', ') || '—'}\n` +
     `• TTL кэша ссылок: ${config.linkCacheTtlMin} мин`
   );
 });
